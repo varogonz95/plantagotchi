@@ -7,7 +7,7 @@ import { FirebaseAppProvider } from 'reactfire';
 import App from './App';
 import * as serviceWorker from './serviceWorker';
 import reportWebVitals from './reportWebVitals';
-import { firebaseConfig } from './constants';
+import { firebaseConfig } from './environment';
 
 // ----------------------------------------------------------------------
 

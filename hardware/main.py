@@ -1,4 +1,4 @@
-import utime
+import time
 from array import array
 
 import network
@@ -79,7 +79,7 @@ def parse_soil_moisture(x) -> float:
     return 100 - (20*x/819)
 
 def create_document(data: dict):
-    fields={}
+    fields={'created_at': {'timestampValue': time.time()}}
     for key, value in data.items():
         valueType='Value'
         if type(value) is None:
@@ -134,10 +134,12 @@ request_interval_count = SEND_REQUEST_INTERVAL
 
 try:
     response = remote_time.get_current_time(TIMEZONE)
-    rtc.datetime()
+    time_tuple = time.gmtime(response.get('unixtime'))
+    rtc.datetime(time_tuple)
     RTC_SET = True
     print(f"unixtime: {response['unixtime']}")
 except Exception as e:
+    RTC_SET = False
     print("Unable to get remote time")
     print(f"Error: {e}")
 
@@ -170,7 +172,7 @@ while True:
                 request_interval_count = 0
 
         request_interval_count += 1
-        utime.sleep(1)
+        time.sleep(1)
     except Exception as exc:
         if 'Wifi' in str(exc):
             for i in range(3, 8):
