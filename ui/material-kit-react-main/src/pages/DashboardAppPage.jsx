@@ -1,31 +1,30 @@
-import { compact, flatten, keys, map, uniq } from "lodash";
+import { flatten, keys, map, uniq } from "lodash";
 
 import { Container, Grid, Typography } from '@mui/material';
 import { Helmet } from 'react-helmet-async';
 
-import { collection } from 'firebase/firestore';
+import { collection, orderBy, query } from 'firebase/firestore';
 import { useFirestore, useFirestoreCollectionData } from 'reactfire';
 
 import { CollectionPaths } from '../constants';
-import AppWebsiteVisits from "../sections/@dashboard/app/AppWebsiteVisits";
+import SensorReadingsChart from "../sections/@dashboard/app/SensorReadingsChart";
 
 export default function DashboardAppPage() {
     // const theme = useTheme();`
     const collectionRef = collection(useFirestore(), CollectionPaths.Sensors);
-    const { status, data, error } = useFirestoreCollectionData(collectionRef, {idField: '$id'});
+    const collectionQuery = query(collectionRef, orderBy('created_at', 'asc'))
+    const { status, data, error } = useFirestoreCollectionData(collectionQuery, {idField: '$id'});
     const documents = data ?? []
-    
+
     const chartLabels = map(documents, 'created_at.seconds')
-        .map(s => new Date(s * 1000))
-        .map(d => d.toUTCString())
 
     const sensorsNames = 
         uniq(flatten(documents.map(doc => keys(doc))))
-        .filter(sn => !['$id', 'created_at'].includes(sn))
+        .filter(sn => !['$id', 'rssi', 'created_at'].includes(sn))
 
     const sensorsData = sensorsNames.map(name => ({
-        name, 
-        data: compact(documents.map(doc => doc[name]))
+        name,
+        data: documents.map(doc => doc[name])
     }))
 
     console.log(chartLabels, sensorsData);
@@ -58,18 +57,20 @@ export default function DashboardAppPage() {
 			<AppWidgetSummary title="Bug Reports" total={234} color="error" icon={'ant-design:bug-filled'} />
 		</Grid> */}
 
-                    <Grid item xs={12} md={6} lg={8}>
-                        {status === 'loading' ? (
-                            <h1>Loading...</h1>
-                        ) : (
-                            <AppWebsiteVisits
-                                title="Website Visits"
-                                subheader="(+43%) than last year"
-                                chartLabels={chartLabels}
-                                chartData={sensorsData}
-                            />
-                        )}
-                    </Grid>
+        {status === 'loading' ? (
+            <h1>Loading...</h1>
+        ) : (
+            sensorsData.map(sensor =>
+                <Grid key={sensor.name} item xs={12} md={6} xl={4}>
+                    <SensorReadingsChart
+                        title={sensor.name}
+                        // subheader="Values are displayed as raw readings"
+                        chartLabels={chartLabels}
+                        chartData={sensor.data}
+                    />
+                </Grid>
+            )
+        )}
 
                     {/* <Grid item xs={12} md={6} lg={4}>
 		<AppCurrentVisits

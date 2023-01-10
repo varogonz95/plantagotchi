@@ -1,5 +1,6 @@
 import time
 from array import array
+from app_sensors import LdrSensor, SoilSensor
 
 import network
 import urequests
@@ -11,8 +12,8 @@ from oled_display import OLEDDisplay_I2C
 
 # GLOBALS ###########################################################################
 PROJECT_NAME = 'Plantagotchi'
-SSID='Alvaro-AP'
-PSSW='hola1234'
+SSID='Nanalu'
+PSSW='Brune1tor9995'
 OLED_WIDTH = 128
 OLED_HEIGHT = 64
 FIRESTORE_API_KEY='AIzaSyAUIuBk5mJt8VqfK4jMvJkizbj0luVPbxI'
@@ -20,7 +21,6 @@ FIRESTORE_PROJECT_ID='workshop-fa2ff'
 SEND_REQUEST_INTERVAL= 60
 MAX_RECONNECTS = 5
 TIMEZONE = "America/Costa_Rica"
-RTC_SET = False
 # ###################################################################################
 
 # INITIALIZE PERIPHERALS ############################################################
@@ -29,20 +29,12 @@ rtc = RTC()
 wlan = wlan_client.init(network.STA_IF)
 i2c = SoftI2C(scl=Pin(22), sda=Pin(21))
 oled = OLEDDisplay_I2C(OLED_WIDTH, OLED_HEIGHT, i2c)
-soil_moist = ADC(Pin(34), atten=ADC.ATTN_11DB)
-ldr = ADC(Pin(35), atten=ADC.ATTN_11DB)
-# dht11_sensor = DHT11(Pin(19))
-# ###################################################################################
+soil_adc = ADC(Pin(34), atten=ADC.ATTN_11DB)
+ldr_hw = ADC(Pin(35), atten=ADC.ATTN_11DB)
 
-def draw_sad_face():
-    oled.fill_rect(50, 24, 4, 4, 1)
-    oled.fill_rect(74, 24, 4, 4, 1)
-    oled.hline(52, 36, 24, 4)
-    oled.pixel(51, 37, 1)
-    oled.pixel(76, 37, 1)
-    oled.pixel(50, 38, 1)
-    oled.pixel(77, 38, 1)
-    oled.show()
+oled.fill(0)
+wlan.config(reconnects=5)
+# ###################################################################################
 
 def draw_signal(x, y, rssi):
     multiplier = 0
@@ -53,64 +45,62 @@ def draw_signal(x, y, rssi):
         multiplier = 2
     else:
         multiplier = 3
-        
+
     coords = array('h',[0, 0, -2 * multiplier, -2 * multiplier, -2 * multiplier, 0])
     oled.poly(x, y, coords, 1, True)
 
-def signal_intensity(rssi):
-    return ((5/6)*int(rssi)) + 100
-
-def handle_exception(ex: Exception):
-    print(str(ex))
-    oled.fill(0)
-    oled.text_line('An error occured', 1)
-    draw_sad_face()
-
-# def display_dht11_readings(dht11_sensor: DHT11, h_line, t_line):
-#     humidity = dht11_sensor.humidity()
-#     temp = dht11_sensor.temperature()
-#     oled.text_line(f'Humidity: {humidity}%', h_line)
-#     oled.text_line(f'Temp: {temp}C', t_line)
-
-def parse_rssi(x) -> float:
-    return (5*x/3) + 150
-
-def parse_soil_moisture(x) -> float:
-    return 100 - (20*x/819)
+def handle_exception(exc: Exception):
+    if 'Wifi' in str(exc):
+        for i in range(3, 8):
+            oled.clear_line(i)
+        oled.text_line(str(exc), 3)
+    else:
+        exc_as_str = str(exc)
+        print(exc_as_str)
+        for i, w in enumerate(exc_as_str.split(' ')):
+            oled.text_line(w, i+3)
 
 def create_document(data: dict):
-    fields={'created_at': {'timestampValue': time.time()}}
+    fields = {}
     for key, value in data.items():
         valueType='Value'
         if type(value) is None:
             valueType = 'null' + valueType
-        if type(value) is bool:
+        elif type(value) is bool:
             valueType = 'boolean' + valueType
-        if type(value) is int:
+        elif type(value) is int:
             valueType = 'integer' + valueType
-        if type(value) is float:
+        elif type(value) is float:
             valueType = 'double' + valueType
-        if type(value) is str:
+        elif type(value) is str:
             valueType = 'string' + valueType
-        if type(value) is list or type(value) is tuple:
+        elif type(value) is list or type(value) is tuple:
             valueType = 'array' + valueType
-        fields[key]= {valueType: value}
+            raise ValueError('array document fields are not yet supported')
+        elif type(value) is dict:
+            valueType = 'map' + valueType
+            fields[key] = { valueType: create_document(value) }
+            continue
+
+        fields[key] = { valueType: value }
+    
     return {'fields': fields}
 
 def display_sensors(sensors: dict):
-    oled.text_line(f'Wifi:  {"%.2f" % sensors["rssi"]}', 3)
-    oled.text_line(f'Soil:  {"%d" % sensors["soil_parsed_value"]}%', 4)
-    oled.text_line(f'Light: {sensors["ldr_raw_value"]}', 5)
+    print(f'Soil:  {sensors["soil"]["raw_value"]}')
+    print(f'Light: {sensors["ldr"]["raw_value"]}')
+    oled.text_line(f'Soil:  {sensors["soil"]["display_value"]}', 4)
+    oled.text_line(f'Light: {sensors["ldr"]["display_value"]}', 5)
 
-def post_sensors_data(data):
-    urequests.post(
+def post_sensors_data(data) -> urequests.Response:
+    return urequests.post(
         f'https://firestore.googleapis.com/v1/projects/{FIRESTORE_PROJECT_ID}/databases/(default)/documents/sensors',
-        json=create_document(data),
+        json=data,
         headers={
             'Content-Type': 'application/json',
             'key': FIRESTORE_API_KEY
         },
-    ).close()
+    )
 
 def try_connect(retries = 1, led = None):
     retry_count = 0
@@ -124,40 +114,32 @@ def try_connect(retries = 1, led = None):
     # Check if connection succeded after retries
     return wlan.isconnected()
 
-wlan.config(reconnects=5)
+def set_rtc(unixtime):
+    time_tuple = time.localtime(unixtime)
+    print(f"time_tuple: {time_tuple}")
+    rtc.datetime(time_tuple)
 
-# Show project name
-oled.fill(0)
-oled.text_line(PROJECT_NAME, 1)
-oled.hline(0, 12 ,128, 2)
+def time_tuple_str(time_tuple: tuple, year = 0, month = 1, date = 2, hours = 3, mins = 4, secs = 5) -> str:
+    return f"{time_tuple[year]}/{time_tuple[month]}/{time_tuple[date]} {time_tuple[hours]}:{time_tuple[mins]}:{time_tuple[secs]}"
 request_interval_count = SEND_REQUEST_INTERVAL
 
-try:
-    response = remote_time.get_current_time(TIMEZONE)
-    time_tuple = time.gmtime(response.get('unixtime'))
-    rtc.datetime(time_tuple)
-    RTC_SET = True
-    print(f"unixtime: {response['unixtime']}")
-except Exception as e:
-    RTC_SET = False
-    print("Unable to get remote time")
-    print(f"Error: {e}")
+oled.text_line(PROJECT_NAME, 1)
+oled.hline(0, 12 ,128, 2)
+
+ldr = LdrSensor(ldr_hw)
+soil = SoilSensor(soil_adc)
 
 while True:
     try:
-        rssi_raw_value = wlan.status('rssi') if wlan.isconnected() else -100
-        rssi = (rssi_raw_value)
-        soil_raw_value = soil_moist.read()
-        ldr_raw_value = ldr.read()
+        # rssi_raw_value = wlan.status('rssi') if wlan.isconnected() else -100
+        # rssi = (rssi_raw_value)
 
         sensors_data: dict = {
-            'rssi': rssi,
-            'soil_raw_value': soil_raw_value,
-            'soil_parsed_value': parse_soil_moisture(soil_raw_value),
-            'ldr_raw_value': ldr_raw_value,
+            'ldr': ldr.as_dict(),
+            'soil': soil.as_dict()
         }
 
-        draw_signal(120, 6, rssi)
+        # draw_signal(120, 6, rssi)
         display_sensors(sensors_data)
 
         oled.clear_line(8)
@@ -165,22 +147,18 @@ while True:
             builtin_led.off()
             oled.text_line("Not connected...", 8)
             print("Failed to reconnect...")
-        elif request_interval_count >= SEND_REQUEST_INTERVAL and RTC_SET:
+        elif request_interval_count >= SEND_REQUEST_INTERVAL:
                 print("Sending data...")
                 oled.text_line("Sending data...", 8)
-                post_sensors_data(sensors_data)
+                documentData = create_document(sensors_data)
+                current_time = remote_time.get_current_time(TIMEZONE).get('datetime')
+                documentData['fields']['created_at'] = {'timestampValue': current_time}
+                print(documentData)
+                post_sensors_data(documentData).close()
                 request_interval_count = 0
-
         request_interval_count += 1
+
         time.sleep(1)
     except Exception as exc:
-        if 'Wifi' in str(exc):
-            for i in range(3, 8):
-                oled.clear_line(i)
-            oled.text_line(str(exc), 3)
-        else:
-            oled.text_line("Error", 1)
-            exc_as_str = str(exc)
-            print(exc_as_str)
-            for i, w in enumerate(exc_as_str.split(' ')):
-                oled.text_line(w, i+3)
+        handle_exception(exc)
+        time.sleep(5)

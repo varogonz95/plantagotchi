@@ -7,17 +7,17 @@ import { useChart } from '../../../components/chart';
 
 // ----------------------------------------------------------------------
 
-AppWebsiteVisits.propTypes = {
+SensorReadingsChart.propTypes = {
     title: PropTypes.string,
     subheader: PropTypes.string,
     chartData: PropTypes.array.isRequired,
-    chartLabels: PropTypes.arrayOf(PropTypes.string).isRequired,
+    chartLabels: PropTypes.arrayOf(PropTypes.any).isRequired,
 };
 
-export default function AppWebsiteVisits({ title, subheader, chartLabels, chartData, ...other }) {
+export default function SensorReadingsChart({ title, subheader, chartLabels, chartData, ...other }) {
     const chartOptions = useChart({
-        plotOptions: { bar: { columnWidth: '16%' } },
-        fill: { type: chartData.map((i) => i.fill) },
+        fill: { type: 'gradient' },
+        stroke: { width: 2 },
         labels: chartLabels,
         xaxis: { type: 'datetime' },
         tooltip: {
@@ -26,7 +26,7 @@ export default function AppWebsiteVisits({ title, subheader, chartLabels, chartD
             y: {
                 formatter: (y) => {
                     if (typeof y !== 'undefined') {
-                        return `${y.toFixed(0)} visits`;
+                        return y.toFixed(2);
                     }
                     return y;
                 },
@@ -39,7 +39,7 @@ export default function AppWebsiteVisits({ title, subheader, chartLabels, chartD
             <CardHeader title={title} subheader={subheader} />
 
             <Box sx={{ p: 3, pb: 1 }} dir="ltr">
-                <ReactApexChart type="line" series={chartData} options={chartOptions} height={364} />
+                <ReactApexChart type="area" series={[{data: chartData}]} options={chartOptions} height={364} />
             </Box>
         </Card>
     );
