@@ -12,8 +12,8 @@ from oled_display import OLEDDisplay_I2C
 
 # GLOBALS ###########################################################################
 PROJECT_NAME = 'Plantagotchi'
-SSID='Nanalu'
-PSSW='Brune1tor9995'
+SSID='Alvaro-AP'
+PSSW='hola1234'
 OLED_WIDTH = 128
 OLED_HEIGHT = 64
 FIRESTORE_API_KEY='AIzaSyAUIuBk5mJt8VqfK4jMvJkizbj0luVPbxI'
@@ -30,10 +30,10 @@ wlan = wlan_client.init(network.STA_IF)
 i2c = SoftI2C(scl=Pin(22), sda=Pin(21))
 oled = OLEDDisplay_I2C(OLED_WIDTH, OLED_HEIGHT, i2c)
 soil_adc = ADC(Pin(34), atten=ADC.ATTN_11DB)
-ldr_hw = ADC(Pin(35), atten=ADC.ATTN_11DB)
+ldr_adc = ADC(Pin(35), atten=ADC.ATTN_11DB)
 
-oled.fill(0)
 wlan.config(reconnects=5)
+oled.fill(0)
 # ###################################################################################
 
 def draw_signal(x, y, rssi):
@@ -50,15 +50,10 @@ def draw_signal(x, y, rssi):
     oled.poly(x, y, coords, 1, True)
 
 def handle_exception(exc: Exception):
-    if 'Wifi' in str(exc):
-        for i in range(3, 8):
-            oled.clear_line(i)
-        oled.text_line(str(exc), 3)
-    else:
-        exc_as_str = str(exc)
-        print(exc_as_str)
-        for i, w in enumerate(exc_as_str.split(' ')):
-            oled.text_line(w, i+3)
+    exc_as_str = str(exc)
+    print(exc_as_str)
+    for i, w in enumerate(exc_as_str.split(' ')):
+        oled.text_line(w, i + 3)
 
 def create_document(data: dict):
     fields = {}
@@ -87,10 +82,9 @@ def create_document(data: dict):
     return {'fields': fields}
 
 def display_sensors(sensors: dict):
-    print(f'Soil:  {sensors["soil"]["raw_value"]}')
-    print(f'Light: {sensors["ldr"]["raw_value"]}')
-    oled.text_line(f'Soil:  {sensors["soil"]["display_value"]}', 4)
-    oled.text_line(f'Light: {sensors["ldr"]["display_value"]}', 5)
+    for i, value in enumerate(sensors.values()):
+        print(f"{value.get('name')}: {value.get('raw_value')}")
+        oled.text_line(f"{value.get('name')}: {value.get('display_value')}", i+3)
 
 def post_sensors_data(data) -> urequests.Response:
     return urequests.post(
@@ -119,17 +113,14 @@ def set_rtc(unixtime):
     print(f"time_tuple: {time_tuple}")
     rtc.datetime(time_tuple)
 
-def time_tuple_str(time_tuple: tuple, year = 0, month = 1, date = 2, hours = 3, mins = 4, secs = 5) -> str:
-    return f"{time_tuple[year]}/{time_tuple[month]}/{time_tuple[date]} {time_tuple[hours]}:{time_tuple[mins]}:{time_tuple[secs]}"
+ldr = LdrSensor(ldr_adc)
+soil = SoilSensor(soil_adc)
 request_interval_count = SEND_REQUEST_INTERVAL
 
-oled.text_line(PROJECT_NAME, 1)
-oled.hline(0, 12 ,128, 2)
-
-ldr = LdrSensor(ldr_hw)
-soil = SoilSensor(soil_adc)
-
 while True:
+    oled.text_line(PROJECT_NAME, 1)
+    oled.hline(0, 12 ,128, 2)
+
     try:
         # rssi_raw_value = wlan.status('rssi') if wlan.isconnected() else -100
         # rssi = (rssi_raw_value)
@@ -141,24 +132,24 @@ while True:
 
         # draw_signal(120, 6, rssi)
         display_sensors(sensors_data)
-
-        oled.clear_line(8)
-        if not try_connect(MAX_RECONNECTS, builtin_led):
-            builtin_led.off()
-            oled.text_line("Not connected...", 8)
-            print("Failed to reconnect...")
-        elif request_interval_count >= SEND_REQUEST_INTERVAL:
-                print("Sending data...")
-                oled.text_line("Sending data...", 8)
-                documentData = create_document(sensors_data)
-                current_time = remote_time.get_current_time(TIMEZONE).get('datetime')
-                documentData['fields']['created_at'] = {'timestampValue': current_time}
-                print(documentData)
-                post_sensors_data(documentData).close()
-                request_interval_count = 0
-        request_interval_count += 1
+        # if not try_connect(MAX_RECONNECTS, builtin_led):
+        #     builtin_led.off()
+        #     oled.text_line("Not connected...", 8)
+        #     print("Failed to reconnect...")
+        # elif request_interval_count >= SEND_REQUEST_INTERVAL:
+        #         print("Sending data...")
+        #         oled.text_line("Sending data...", 8)
+        #         documentData = create_document(sensors_data)
+        #         current_time = remote_time.get_current_time(TIMEZONE).get('datetime')
+        #         documentData['fields']['created_at'] = {'timestampValue': current_time}
+        #         print(documentData)
+        #         post_sensors_data(documentData).close()
+        #         oled.clear_lines([8])
+        #         request_interval_count = 0
+        # request_interval_count += 1
 
         time.sleep(1)
     except Exception as exc:
         handle_exception(exc)
         time.sleep(5)
+        oled.clear_lines(range(1, 9))

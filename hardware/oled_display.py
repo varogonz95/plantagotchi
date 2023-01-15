@@ -19,8 +19,9 @@ class OLEDDisplay_I2C(SSD1306_I2C):
         if show:
             super().show()
 
-    def clear_line(self, line: int):
+    def clear_lines(self, lines: list):
         h = MEM_SIZE
-        y = ((line - 1) * MEM_SIZE)
         w = self.width
-        super().fill_rect(0, y, w, h, 0)
+        for i in lines:
+            y = (i - 1) * MEM_SIZE
+            super().fill_rect(0, y, w, h, 0)

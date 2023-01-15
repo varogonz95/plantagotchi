@@ -1,6 +1,6 @@
 # Workflow
 
-## Setup connection
+## 1. Setup connection.
 
 ### A. With Access Point step only
 - Create Access Point being Plantagotchi-{MAC_ADDRESS_PORTION}
@@ -18,3 +18,23 @@
     - Give (this) device a name
     - Continue with workflow A.
 - Else, show error message
+
+-------------------------------------------------------------------------------------------------------------
+
+## Calibration Menu.
+- In a separate thread, check for MenuButton to be pushed.
+- If the button is pushed, then:
+    - Show Calibration Menu:
+        | Calibration Menu       |
+        | ---------------------- |
+        | > Light Sensor         |
+        | Soil Moisture Sensor   |
+
+### Soil Moisture Sensor Calibration.
+- To calibrate `MIN_MOISTURE`, show the following message:
+    > Set Min Moisture  
+    >
+    > Voltage: `{soil_sensor.read_uv()}`  
+    > \> Press [BUTTON]  
+    > to calibrate
+- When [BUTTON] is pressed, set `MIN_MOISTURE` to `soil.read_uv()` value
