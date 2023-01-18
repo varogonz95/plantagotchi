@@ -1,4 +1,4 @@
-import utime
+import time
 from network import WLAN
 
 def init(type, active=True) -> WLAN: 
@@ -17,7 +17,7 @@ def connect(wlan: WLAN, ssid: str, passw: str, retry_timeout = 15, indicator_gpi
             if indicator_gpio is not None:
                 indicator_gpio.value(not indicator_gpio.value())
             retry_count += sleep_time
-            utime.sleep(sleep_time)
+            time.sleep(sleep_time)
     
     if indicator_gpio is not None:
         indicator_gpio.value(wlan.isconnected())

@@ -1,3 +1,4 @@
+MICRO_VOLT= 1000000
 class Sensor:
     def __init__(self, name: str, description: str) -> None:
         self.name = name
@@ -37,10 +38,11 @@ class SoilSensor(Sensor):
 
     @property
     def display_value(self) -> str:
-        return f'{"%.2f" % ((20 * self.read() / 819))}%'
+        # return f'{"%.2f" % ((20 * self.read() / 819))}%'
+        return self.read()
 
     def read(self):
-        return self.__hw_sensor.read()
+        return self.__hw_sensor.read_uv() / MICRO_VOLT
 
 class DHT11Sensor(Sensor):
     def __init__(self, dht11_sensor) -> None:

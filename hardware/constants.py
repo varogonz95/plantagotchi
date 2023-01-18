@@ -1,0 +1,10 @@
+PROJECT_NAME = 'Plantagotchi'
+SSID = 'Alvaro-AP'
+PSSW = 'hola1234'
+OLED_WIDTH = 128
+OLED_HEIGHT = 64
+FIRESTORE_API_KEY = 'AIzaSyAUIuBk5mJt8VqfK4jMvJkizbj0luVPbxI'
+FIRESTORE_PROJECT_ID = 'workshop-fa2ff'
+SEND_REQUEST_SECS= 60
+MAX_RECONNECTS = 5
+TIMEZONE = "America/Costa_Rica"

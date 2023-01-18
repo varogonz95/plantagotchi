@@ -1,8 +1,8 @@
-from ssd1306 import SSD1306_I2C
+from drivers.ssd1306 import SSD1306_I2C
 
 MEM_SIZE = 8
 
-class OLEDDisplay_I2C(SSD1306_I2C):
+class Display_I2C(SSD1306_I2C):
 
     def __init__(self, width, height, i2c, addr=0x3C, external_vcc=False):
         self.width = width
