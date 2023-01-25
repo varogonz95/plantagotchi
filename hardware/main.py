@@ -1,5 +1,6 @@
 import _thread
 import time
+import re
 
 import network
 import urequests
@@ -8,9 +9,7 @@ from machine import ADC, RTC, Pin, SoftI2C
 import constants as Const
 from lib import app_sensors as sensors
 from lib import oled_display as oled
-from lib import remote_time, wlan_client
-
-# from dht11 import DHT11
+from lib import wlan_client
 
 # INIT ------------------------------------------------------------------------------
 builtin_led = Pin(2, Pin.OUT)
@@ -28,32 +27,22 @@ display.hline(0, 12 ,128, 2)
 # /INIT -----------------------------------------------------------------------------
 
 # FUNCTIONS -------------------------------------------------------------------------
-def is_pressed(btn):
-    return not btn.value()
-
-def show_calibration_menu():
-    display.text_line('Calibration', 1)
-
-def display_sensors(sensors: dict):
-    for i, value in enumerate(sensors.values()):
-        print(f"{value.get('name')}: {value.get('raw_value')}")
-        display.text_line(f"{value.get('name')}: {value.get('display_value')}", i+3)
+def log(txt):
+    if Const.ENABLE_LOGS:
+        print(txt)
 
 def handle_exception(exc: Exception):
     exc_as_str = str(exc)
-    print(exc_as_str)
+    log(exc_as_str)
     for i, w in enumerate(exc_as_str.split(' ')):
         display.text_line(w, i + 3)
 # /FUNCTIONS ------------------------------------------------------------------------
 
 ldr = sensors.LdrSensor(ldr_adc)
 soil = sensors.SoilSensor(soil_adc)
-
-selected_sensor = ldr.name
 initial_time = time.time()
-current_workflow = Const.MONITOR_WORKFLOW
 
-def keep_posting_data(latest_request):
+def data_pusher_thread(latest_request):
     def try_connect(retries = 1, led = None):
         retry_count = 0
         # While network is available
@@ -70,6 +59,12 @@ def keep_posting_data(latest_request):
         fields = {}
         for key, value in data.items():
             valueType='Value'
+
+            if re.match('^\w+\:\w+$', key):
+                keyParts = str(key).split(':')
+                valueType = keyParts[1] + valueType
+                fields[keyParts[0]] = { valueType: value }
+                continue
             if type(value) is None:
                 valueType = 'null' + valueType
             elif type(value) is bool:
@@ -107,38 +102,102 @@ def keep_posting_data(latest_request):
             if not try_connect(Const.MAX_RECONNECTS, builtin_led):
                 builtin_led.off()
                 display.text_line("Not connected...", 8)
-                print("Failed to reconnect...")
+                log("Failed to reconnect...")
             elif elapsed_time >= Const.SEND_REQUEST_SECS:
-                print("Sending data...")
+                log("Sending data...")
                 display.text_line("Sending data...", 8)
+                # current_time = remote_time.get_current_time(Const.TIMEZONE).get('datetime')
                 documentData = create_document({
                     'ldr': ldr.as_dict(),
-                    'soil': soil.as_dict()
+                    'soil': soil.as_dict(),
+                    'created_at:timestamp': now
                 })
-                current_time = remote_time.get_current_time(Const.TIMEZONE).get('datetime')
-                documentData['fields']['created_at'] = {'timestampValue': current_time}
-                print(documentData)
                 post_sensors_data(documentData).close()
+                log(documentData)
                 display.clear_lines([8])
                 latest_request = now
             time.sleep(1)
         except Exception as exc:
-            handle_exception(exc)
-            time.sleep(5)
-            display.clear_lines(range(1, 9))
+            # handle_exception(exc)
+            # time.sleep(5)
+            # display.clear_lines(range(1, 9))
+            pass
 
-_thread.start_new_thread(keep_posting_data, (initial_time,))
+def sensor_monitor_thread():
+    button_released = True
+    current_workflow = Const.MONITOR_WORKFLOW
 
-while True:
-    if is_pressed(boot_btn):
-        current_workflow = Const.CALIBRATION_WORKFLOW
+    def is_pressed(btn):
+        return not btn.value()
 
-    if current_workflow is Const.MONITOR_WORKFLOW:
-        display.text_line("Plantagotchi", 1)
-        display_sensors({
-            'ldr': ldr.as_dict(),
-            'soil': soil.as_dict()
-        })
-        time.sleep(1)
-    if current_workflow is Const.CALIBRATION_WORKFLOW:
-        show_calibration_menu()
+    def show_calibration_menu(sensors: list):
+        log("Calibration menu")
+        display.text_line('Calibration', 1)
+        for s in sensors:
+            display.text_line('> Light', 3)
+            display.text_line('  Soil', 4)
+
+    def show_min_sensor_calibration(sensor: sensors.Sensor):
+        log(f"{sensor.name} - Min")
+        log(f'Voltaje: {sensor.read_voltage()}')
+        display.text_line(f"{sensor.name} - Min", 1)
+        display.text_line(f'Voltaje: {sensor.read_voltage()}', 3)
+
+    def show_max_sensor_calibration(sensor: sensors.Sensor):
+        log(f"{sensor.name} - Max")
+        log(f'Voltaje: {sensor.read_voltage()}')
+        display.text_line(f"{sensor.name} - Max", 1)
+        display.text_line(f'Voltaje: {sensor.read_voltage()}', 3)
+        
+    def display_sensors(sensors: dict):
+        out = []
+        for i, value in enumerate(sensors.values()):
+            out.append(f"{value.get('name')}: {value.get('raw_value')}")
+            display.text_line(f"{value.get('name')}: {value.get('display_value')}", i+3)
+        log(", ".join(out))
+
+    while True:
+        if is_pressed(boot_btn):
+            # REDIRECT TO CALIBRATION MENU
+            if current_workflow is Const.MONITOR_WORKFLOW and button_released:
+                current_workflow = Const.CALIBRATION_MENU_WORKFLOW
+            # REDIRECT TO CALIBRATION MENU
+            elif current_workflow is Const.CALIBRATION_MENU_WORKFLOW and button_released:
+                current_workflow = Const.SET_SENSOR_MIN_CALIBRATION_VALUE
+
+            elif current_workflow is Const.SET_SENSOR_MIN_CALIBRATION_VALUE and button_released:
+                soil.min_value = soil.read_voltage()
+                current_workflow = Const.SET_SENSOR_MAX_CALIBRATION_VALUE
+
+            elif current_workflow is Const.SET_SENSOR_MAX_CALIBRATION_VALUE and button_released:
+                soil.max_value = soil.read_voltage()
+                current_workflow = Const.MONITOR_WORKFLOW
+
+            button_released = False
+
+        elif not button_released:
+            button_released = True
+
+        if current_workflow is Const.MONITOR_WORKFLOW:
+            display.text_line("Plantagotchi", 1)
+            display_sensors({
+                'ldr': ldr.as_dict(),
+                'soil': soil.as_dict()
+            })
+            time.sleep(1)
+        elif current_workflow is Const.CALIBRATION_MENU_WORKFLOW:
+            show_calibration_menu()
+            time.sleep_ms(250)
+        elif current_workflow is Const.SET_SENSOR_MIN_CALIBRATION_VALUE:
+            show_min_sensor_calibration(soil)
+            time.sleep_ms(250)
+        elif current_workflow is Const.SET_SENSOR_MAX_CALIBRATION_VALUE:
+            show_max_sensor_calibration(soil)
+            time.sleep_ms(250)
+
+# _thread.start_new_thread(data_pusher_thread, (initial_time,))
+_thread.start_new_thread(sensor_monitor_thread, ())
+
+data_pusher_thread(initial_time)
+# sensor_monitor_thread()
+

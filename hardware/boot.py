@@ -7,7 +7,7 @@ import esp
 esp.osdebug(esp.LOG_VERBOSE)
 import time
 
-import ssd1306
+from drivers import ssd1306
 from machine import Pin, SoftI2C
 
 # using default address 0x3C

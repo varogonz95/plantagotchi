@@ -1,3 +1,4 @@
+import framebuf
 from drivers.ssd1306 import SSD1306_I2C
 
 MEM_SIZE = 8
@@ -25,3 +26,12 @@ class Display_I2C(SSD1306_I2C):
         for i in lines:
             y = (i - 1) * MEM_SIZE
             super().fill_rect(0, y, w, h, 0)
+
+    def image(self, filename, x, y):
+        with open(filename, 'rb') as f:
+            f.readline() # Magic number
+            f.readline() # Creator comment
+            f.readline() # Dimensions
+            data = bytearray(f.read())
+        buffer = framebuf.FrameBuffer(data, self.width, self.height, framebuf.MONO_HLSB)
+        self.blit(buffer, x, y)

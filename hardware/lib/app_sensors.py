@@ -1,14 +1,20 @@
 MICRO_VOLT= 1000000
+
 class Sensor:
     def __init__(self, name: str, description: str) -> None:
         self.name = name
         self.description = description
+        self.max_value = 0
+        self.min_value = 0
 
     @property
     def display_value(self) -> str:
         return None
 
     def read(self):
+        return None
+
+    def read_voltage(self):
         return None
 
     def as_dict(self) -> dict:
@@ -31,17 +37,26 @@ class LdrSensor(Sensor):
     def read(self):
         return self.__hw_sensor.read()
 
+    def read_voltage(self):
+        return self.__hw_sensor.read_uv() / MICRO_VOLT
+
 class SoilSensor(Sensor):
     def __init__(self, soil_sensor) -> None:
         super().__init__('Soil', 'Soil Moisture')
         self.__hw_sensor = soil_sensor
 
+    def __read_formula(self):
+        upper_value = self.max_value if self.max_value > self.min_value else self.min_value
+        return (upper_value - self.read_voltage())/abs(self.max_value - self.min_value)
+
     @property
     def display_value(self) -> str:
-        # return f'{"%.2f" % ((20 * self.read() / 819))}%'
-        return self.read()
+        return f'{"%.2f" % (self.__read_formula() * 100)}%'
 
     def read(self):
+        return self.__hw_sensor.read()
+
+    def read_voltage(self):
         return self.__hw_sensor.read_uv() / MICRO_VOLT
 
 class DHT11Sensor(Sensor):
