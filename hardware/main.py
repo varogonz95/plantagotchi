@@ -10,6 +10,7 @@ import constants as Const
 from lib import app_sensors as sensors
 from lib import oled_display as oled
 from lib import wlan_client
+from lib import remote_time
 
 # INIT ------------------------------------------------------------------------------
 builtin_led = Pin(2, Pin.OUT)
@@ -18,8 +19,8 @@ boot_btn = Pin(0, Pin.IN, Pin.PULL_DOWN)
 i2c = SoftI2C(scl=Pin(22), sda=Pin(21))
 display = oled.Display_I2C(Const.OLED_WIDTH, Const.OLED_HEIGHT, i2c)
 wlan = wlan_client.init(network.STA_IF)
-soil_adc = ADC(Pin(34), atten=ADC.ATTN_11DB)
-ldr_adc = ADC(Pin(35), atten=ADC.ATTN_11DB)
+soil_adc = ADC(Pin(34))
+ldr_adc = ADC(Pin(35))
 
 wlan.config(reconnects=5)
 display.fill(0)
@@ -30,6 +31,9 @@ display.hline(0, 12 ,128, 2)
 def log(txt):
     if Const.ENABLE_LOGS:
         print(txt)
+    
+def limit(value, limit):
+    return limit if value > limit else value
 
 def handle_exception(exc: Exception):
     exc_as_str = str(exc)
@@ -59,7 +63,6 @@ def data_pusher_thread(latest_request):
         fields = {}
         for key, value in data.items():
             valueType='Value'
-
             if re.match('^\w+\:\w+$', key):
                 keyParts = str(key).split(':')
                 valueType = keyParts[1] + valueType
@@ -86,7 +89,7 @@ def data_pusher_thread(latest_request):
         return {'fields': fields}
 
     def post_sensors_data(data):
-        return urequests.post(
+        response = urequests.post(
             f'https://firestore.googleapis.com/v1/projects/{Const.FIRESTORE_PROJECT_ID}/databases/(default)/documents/sensors',
             json=data,
             headers={
@@ -94,6 +97,9 @@ def data_pusher_thread(latest_request):
                 'key': Const.FIRESTORE_API_KEY
             },
         )
+        if response.json().get('error') is not None:
+            raise 'Data error'
+        return response
    
     while True:
         now = time.time()
@@ -106,11 +112,11 @@ def data_pusher_thread(latest_request):
             elif elapsed_time >= Const.SEND_REQUEST_SECS:
                 log("Sending data...")
                 display.text_line("Sending data...", 8)
-                # current_time = remote_time.get_current_time(Const.TIMEZONE).get('datetime')
+                current_time = remote_time.get_current_time(Const.TIMEZONE).get('datetime')
                 documentData = create_document({
                     'ldr': ldr.as_dict(),
                     'soil': soil.as_dict(),
-                    'created_at:timestamp': now
+                    'created_at:timestamp': current_time
                 })
                 post_sensors_data(documentData).close()
                 log(documentData)
@@ -118,10 +124,11 @@ def data_pusher_thread(latest_request):
                 latest_request = now
             time.sleep(1)
         except Exception as exc:
-            # handle_exception(exc)
-            # time.sleep(5)
-            # display.clear_lines(range(1, 9))
-            pass
+            err = str(exc)
+            elapsed_time = 0
+            log(err)
+            display.text_line(err, 8)
+            time.sleep(3)
 
 def sensor_monitor_thread():
     button_released = True
@@ -138,22 +145,34 @@ def sensor_monitor_thread():
             display.text_line('  Soil', 4)
 
     def show_min_sensor_calibration(sensor: sensors.Sensor):
-        log(f"{sensor.name} - Min")
-        log(f'Voltaje: {sensor.read_voltage()}')
-        display.text_line(f"{sensor.name} - Min", 1)
-        display.text_line(f'Voltaje: {sensor.read_voltage()}', 3)
+        log(f"{sensor.name} - Minimun")
+        log(f'Voltaje: {sensor.read_voltage()/sensors.MICRO_VOLT}')
+        display.text_line(f"{sensor.name} - Minimun", 1)
+        display.clear_lines([2])
+        display.text_line(f'Voltaje: {sensor.read_voltage()/sensors.MICRO_VOLT}', 3)
 
     def show_max_sensor_calibration(sensor: sensors.Sensor):
-        log(f"{sensor.name} - Max")
-        log(f'Voltaje: {sensor.read_voltage()}')
-        display.text_line(f"{sensor.name} - Max", 1)
-        display.text_line(f'Voltaje: {sensor.read_voltage()}', 3)
-        
+        log(f"{sensor.name} - Maximum")
+        log(f'Voltaje: {sensor.read_voltage()/sensors.MICRO_VOLT}')
+        display.text_line(f"{sensor.name} - Maximum", 1)
+        display.clear_lines([2])
+        display.text_line(f'Voltaje: {sensor.read_voltage()/sensors.MICRO_VOLT}', 3)
+
+    def progress_bar(x, line, max_width, percent):
+        y = line * 8
+        w = limit(percent, 100) * max_width // 100
+        h = 6
+        print({'p': percent, 'w': w})
+        display.rect(x, y, max_width, h, 0, True)
+        display.rect(x, y, max_width, h, 1)
+        display.rect(x, y, int(w), h, 1, True)
+
     def display_sensors(sensors: dict):
         out = []
-        for i, value in enumerate(sensors.values()):
-            out.append(f"{value.get('name')}: {value.get('raw_value')}")
-            display.text_line(f"{value.get('name')}: {value.get('display_value')}", i+3)
+        for i, sen in enumerate(sensors.values()):
+            out.append(f"{str(sen.get('name'))[0]}: {sen['values']}")
+            # display.text_line(f"{str(sen.get('name'))[0]}", i+3)
+            progress_bar(16, i+3, 100, sen['values']['computed']*100)
         log(", ".join(out))
 
     while True:
@@ -161,17 +180,18 @@ def sensor_monitor_thread():
             # REDIRECT TO CALIBRATION MENU
             if current_workflow is Const.MONITOR_WORKFLOW and button_released:
                 current_workflow = Const.CALIBRATION_MENU_WORKFLOW
-            # REDIRECT TO CALIBRATION MENU
+            # REDIRECT TO SENSOR MIN VALUE CALIBRATION
             elif current_workflow is Const.CALIBRATION_MENU_WORKFLOW and button_released:
                 current_workflow = Const.SET_SENSOR_MIN_CALIBRATION_VALUE
-
+            # REDIRECT TO SENSOR MAX VALUE CALIBRATION
             elif current_workflow is Const.SET_SENSOR_MIN_CALIBRATION_VALUE and button_released:
                 soil.min_value = soil.read_voltage()
                 current_workflow = Const.SET_SENSOR_MAX_CALIBRATION_VALUE
-
+            # END CALIBRATION AND REDIRECT TO MAIN WORKFLOW
             elif current_workflow is Const.SET_SENSOR_MAX_CALIBRATION_VALUE and button_released:
                 soil.max_value = soil.read_voltage()
                 current_workflow = Const.MONITOR_WORKFLOW
+                display.clear_lines([3, 4])
 
             button_released = False
 
@@ -186,7 +206,7 @@ def sensor_monitor_thread():
             })
             time.sleep(1)
         elif current_workflow is Const.CALIBRATION_MENU_WORKFLOW:
-            show_calibration_menu()
+            show_calibration_menu([soil])
             time.sleep_ms(250)
         elif current_workflow is Const.SET_SENSOR_MIN_CALIBRATION_VALUE:
             show_min_sensor_calibration(soil)
