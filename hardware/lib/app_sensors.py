@@ -15,14 +15,16 @@ class Sensor:
     def is_calibrated(self) -> bool:
         return not self.max_value == self.min_value
 
-    def read(self):
+    def read_computed(self):
         pass
-        
 
     def read_adc(self):
         pass
 
     def read_voltage(self):
+        pass
+
+    def read_percent(self):
         pass
 
     def as_dict(self) -> dict:
@@ -33,7 +35,8 @@ class Sensor:
                 'adc': self.read_adc(),
                 'display': self.display_value,
                 'voltage': self.read_voltage(),
-                'computed': self.read() if self.is_calibrated else 0
+                'percent': self.read_percent(),
+                'computed': self.read_computed()
             }
         }
 
@@ -44,10 +47,16 @@ class LdrSensor(Sensor):
 
     @property
     def display_value(self) -> str:
-        return f'{"%.2f" % (100 - (20 * self.read_adc() / 819))}%'
+        return f'{"%.2f" % self.read_percent()}%'
+
+    def read_computed(self):
+        return 1 - (self.read_adc() / 4095)
 
     def read_adc(self):
         return self.__hw_sensor.read()
+
+    def read_percent(self):
+        return self.read_computed() * 100
 
     def read_voltage(self):
         return self.__hw_sensor.read_uv()
@@ -60,35 +69,33 @@ class SoilSensor(Sensor):
     @property
     def display_value(self) -> str:
         if self.is_calibrated:
-            return f'{"%.2f" % (self.read() * 100)}%'
+            return f'{"%.2f" % (self.read_computed() * 100)}%'
         return 'N/A'
 
-    def read(self):
+    def read_computed(self):
+        v_delta = None
+        l_delta = None
         if self.max_value < self.min_value:
-            return (self.read_voltage() - self.min_value)/(self.max_value - self.min_value)
+            v_delta = self.read_voltage() - self.max_value
+            l_delta = self.max_value - self.min_value
+        elif self.min_value == self.max_value:
+            v_delta = 1
+            l_delta = 1
         else:
-            return (self.read_voltage() - self.max_value)/(self.min_value - self.max_value)
+            v_delta = self.read_voltage() - self.min_value
+            l_delta = self.min_value - self.max_value
+        return v_delta/l_delta
 
     def read_adc(self):
         return self.__hw_sensor.read()
+
+    def read_percent(self):
+        return self.read_computed() * 100
 
     def read_voltage(self):
         return self.__hw_sensor.read_uv()
-
-class DHT11Sensor(Sensor):
-    def __init__(self, dht11_sensor) -> None:
-        super().__init__('DHT11', 'Humidity & Temp')
-        self.__hw_sensor = dht11_sensor
-
-    @property
-    def display_value(self) -> str:
-        return f'{"%.2f" % (100 - (20 * self.read_adc() / 819))}%'
-
-    def read_adc(self):
-        return self.__hw_sensor.read()
-
-    # def display_dht11_readings(dht11_sensor: DHT11, h_line, t_line):
-    #     humidity = dht11_sensor.humidity()
-    #     temp = dht11_sensor.temperature()
-    #     oled.text_line(f'Humidity: {humidity}%', h_line)
-    #     oled.text_line(f'Temp: {temp}C', t_line)
+        
+    def as_dict(self) -> dict:
+        out = super().as_dict()
+        out['values']['computed'] = self.read_computed() if self.is_calibrated else 0
+        return out

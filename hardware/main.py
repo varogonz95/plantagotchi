@@ -19,8 +19,8 @@ boot_btn = Pin(0, Pin.IN, Pin.PULL_DOWN)
 i2c = SoftI2C(scl=Pin(22), sda=Pin(21))
 display = oled.Display_I2C(Const.OLED_WIDTH, Const.OLED_HEIGHT, i2c)
 wlan = wlan_client.init(network.STA_IF)
-soil_adc = ADC(Pin(34))
-ldr_adc = ADC(Pin(35))
+soil_adc = ADC(Pin(34), atten=ADC.ATTN_11DB)
+ldr_adc = ADC(Pin(35), atten=ADC.ATTN_11DB)
 
 wlan.config(reconnects=5)
 display.fill(0)
@@ -159,7 +159,7 @@ def sensor_monitor_thread():
         display.text_line(f'Voltaje: {sensor.read_voltage()/sensors.MICRO_VOLT}', 3)
 
     def progress_bar(x, line, max_width, percent):
-        y = line * 8
+        y = (line - 1)  * 8
         w = limit(percent, 100) * max_width // 100
         h = 6
         print({'p': percent, 'w': w})
@@ -171,13 +171,14 @@ def sensor_monitor_thread():
         out = []
         for i, sen in enumerate(sensors.values()):
             out.append(f"{str(sen.get('name'))[0]}: {sen['values']}")
-            # display.text_line(f"{str(sen.get('name'))[0]}", i+3)
-            progress_bar(16, i+3, 100, sen['values']['computed']*100)
+            display.text(f"{str(sen.get('name'))[0]}", 0, (i+2)*8)
+            progress_bar(16, i+3, 100, sen['values']['percent'])
         log(", ".join(out))
 
     while True:
         if is_pressed(boot_btn):
             # REDIRECT TO CALIBRATION MENU
+            display.fill(0)
             if current_workflow is Const.MONITOR_WORKFLOW and button_released:
                 current_workflow = Const.CALIBRATION_MENU_WORKFLOW
             # REDIRECT TO SENSOR MIN VALUE CALIBRATION
