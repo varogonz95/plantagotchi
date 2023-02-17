@@ -1,4 +1,5 @@
-MICRO_VOLT= 1000000
+MICRO_VOLT = 1000000
+
 
 class Sensor:
     def __init__(self, name: str, description: str) -> None:
@@ -9,7 +10,7 @@ class Sensor:
 
     @property
     def display_value(self) -> str:
-        return None
+        return ''
 
     @property
     def is_calibrated(self) -> bool:
@@ -18,14 +19,14 @@ class Sensor:
     def read_computed(self):
         pass
 
-    def read_adc(self):
-        pass
+    def read_adc(self) -> float:
+        return 0
 
-    def read_voltage(self):
-        pass
+    def read_voltage(self) -> float:
+        return 0
 
-    def read_percent(self):
-        pass
+    def read_percent(self) -> float:
+        return 0
 
     def as_dict(self) -> dict:
         return {
@@ -39,6 +40,7 @@ class Sensor:
                 'computed': self.read_computed()
             }
         }
+
 
 class LdrSensor(Sensor):
     def __init__(self, ldr_sensor) -> None:
@@ -61,6 +63,7 @@ class LdrSensor(Sensor):
     def read_voltage(self):
         return self.__hw_sensor.read_uv()
 
+
 class SoilSensor(Sensor):
     def __init__(self, soil_sensor) -> None:
         super().__init__('Soil', 'Soil Moisture')
@@ -73,18 +76,18 @@ class SoilSensor(Sensor):
         return 'N/A'
 
     def read_computed(self):
+        v_adj = None
         v_delta = None
-        l_delta = None
         if self.max_value < self.min_value:
-            v_delta = self.read_voltage() - self.max_value
-            l_delta = self.max_value - self.min_value
+            v_adj = self.read_voltage() - self.min_value
+            v_delta = self.max_value - self.min_value
         elif self.min_value == self.max_value:
             v_delta = 1
-            l_delta = 1
+            v_adj = 1
         else:
-            v_delta = self.read_voltage() - self.min_value
-            l_delta = self.min_value - self.max_value
-        return v_delta/l_delta
+            v_adj = self.read_voltage() - self.min_value
+            v_delta = self.min_value - self.max_value
+        return v_adj/v_delta
 
     def read_adc(self):
         return self.__hw_sensor.read()
@@ -94,8 +97,9 @@ class SoilSensor(Sensor):
 
     def read_voltage(self):
         return self.__hw_sensor.read_uv()
-        
+
     def as_dict(self) -> dict:
         out = super().as_dict()
-        out['values']['computed'] = self.read_computed() if self.is_calibrated else 0
+        out['values']['computed'] = self.read_computed(
+        ) if self.is_calibrated else 0
         return out

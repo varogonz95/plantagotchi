@@ -1,14 +1,15 @@
 # This file is executed on every boot (including wake-boot from deepsleep)
 #import webrepl
-#webrepl.start()
+# webrepl.start()
 
+import gc
+from machine import Pin, SoftI2C
+from drivers import ssd1306
+import time
 import esp
 
 esp.osdebug(esp.LOG_VERBOSE)
-import time
 
-from drivers import ssd1306
-from machine import Pin, SoftI2C
 
 # using default address 0x3C
 i2c = SoftI2C(sda=Pin(21), scl=Pin(22))
@@ -27,3 +28,5 @@ display.show()
 
 time.sleep(3)
 display.poweroff()
+
+gc.collect()
