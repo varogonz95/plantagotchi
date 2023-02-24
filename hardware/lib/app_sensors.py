@@ -1,7 +1,7 @@
 MICRO_VOLT = 1000000
 
 
-class Sensor:
+class AnalogSensor:
     def __init__(self, name: str, description: str) -> None:
         self.name = name
         self.description = description
@@ -42,7 +42,7 @@ class Sensor:
         }
 
 
-class LdrSensor(Sensor):
+class LdrSensor(AnalogSensor):
     def __init__(self, ldr_sensor) -> None:
         super().__init__('Light', 'Light')
         self.__hw_sensor = ldr_sensor
@@ -64,42 +64,48 @@ class LdrSensor(Sensor):
         return self.__hw_sensor.read_uv()
 
 
-class SoilSensor(Sensor):
+class SoilSensor(AnalogSensor):
     def __init__(self, soil_sensor) -> None:
         super().__init__('Soil', 'Soil Moisture')
         self.__hw_sensor = soil_sensor
 
     @property
     def display_value(self) -> str:
-        if self.is_calibrated:
+        if self.is_calibrated or self.__hw_sensor is not None:
             return f'{"%.2f" % (self.read_computed() * 100)}%'
         return 'N/A'
 
     def read_computed(self):
-        v_adj = None
-        v_delta = None
-        if self.max_value < self.min_value:
-            v_adj = self.read_voltage() - self.min_value
-            v_delta = self.max_value - self.min_value
-        elif self.min_value == self.max_value:
-            v_delta = 1
-            v_adj = 1
-        else:
-            v_adj = self.read_voltage() - self.min_value
-            v_delta = self.min_value - self.max_value
-        return v_adj/v_delta
+        if self.__hw_sensor is not None:
+            v_adj = None
+            v_delta = None
+            if self.max_value < self.min_value:
+                v_adj = self.read_voltage() - self.min_value
+                v_delta = self.max_value - self.min_value
+            elif self.min_value == self.max_value:
+                v_delta = 1
+                v_adj = 1
+            else:
+                v_adj = self.read_voltage() - self.min_value
+                v_delta = self.min_value - self.max_value
+            return v_adj/v_delta
+        return 0
 
     def read_adc(self):
-        return self.__hw_sensor.read()
+        return self.__hw_sensor.read() \
+            if self.__hw_sensor is not None \
+            else -1
 
     def read_percent(self):
         return self.read_computed() * 100
 
     def read_voltage(self):
-        return self.__hw_sensor.read_uv()
+        return self.__hw_sensor.read_uv() \
+            if self.__hw_sensor is not None \
+            else -1
 
     def as_dict(self) -> dict:
         out = super().as_dict()
-        out['values']['computed'] = self.read_computed(
-        ) if self.is_calibrated else 0
+        out['values']['computed'] = self.read_computed() \
+            if self.is_calibrated else 0
         return out

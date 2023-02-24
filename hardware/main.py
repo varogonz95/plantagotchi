@@ -1,3 +1,4 @@
+import gc
 import _thread
 import re
 import time
@@ -8,21 +9,34 @@ from machine import ADC, RTC, Pin, SoftI2C
 from network import WLAN
 
 import constants as C
+from helpers import DisplayHelper
 from lib import app_sensors as sensors
 from lib import oled_display as oled
 from lib import remote_time, wlan_client
 
 # INIT ------------------------------------------------------------------------------
-builtin_led = Pin(2, Pin.OUT)
-rtc = RTC()
-boot_btn = Pin(0, Pin.IN, Pin.PULL_DOWN)
-i2c = SoftI2C(scl=Pin(22), sda=Pin(21))
-display = oled.Display_I2C(C.OLED_WIDTH, C.OLED_HEIGHT, i2c)
-soil_adc = ADC(Pin(34), atten=ADC.ATTN_11DB)
-ldr_adc = ADC(Pin(35), atten=ADC.ATTN_11DB)
+builtin_led = None
+rtc = None
+boot_btn = None
+i2c = None
+display = None
+soil_adc = None
+ldr_adc = None
 
-display.fill(0)
-display.hline(0, 12, 128, 2)
+try:
+    builtin_led = Pin(2, Pin.OUT)
+    rtc = RTC()
+    boot_btn = Pin(0, Pin.IN, Pin.PULL_DOWN)
+    i2c = SoftI2C(scl=Pin(22), sda=Pin(21))
+    display = oled.Display_I2C(C.OLED_WIDTH, C.OLED_HEIGHT, i2c)
+    soil_adc = ADC(Pin(34), atten=ADC.ATTN_11DB)
+    ldr_adc = ADC(Pin(35), atten=ADC.ATTN_11DB)
+except:
+    print('Unable to initialize sensors')
+
+d = DisplayHelper(display)
+d.fill(0)
+d.hline(0, 12, 128, 2)
 # /INIT -----------------------------------------------------------------------------
 
 # FUNCTIONS -------------------------------------------------------------------------
@@ -41,7 +55,7 @@ def handle_exception(exc: Exception):
     exc_as_str = str(exc)
     log(exc_as_str)
     for i, w in enumerate(exc_as_str.split(' ')):
-        display.text_line(w, i + 3)
+        d.text_line(w, i + 3)
 # /FUNCTIONS ------------------------------------------------------------------------
 
 
@@ -59,11 +73,11 @@ def data_pusher_thread(latest_request):
         # While network is available
         #   and has remaining retries
         while retry_count < retries and not wlan.isconnected() and wlan_client.is_nearby(wlan, C.SSID):
-            display.text_line("Connecting...", 8)
+            d.text_line("Connecting...", 8)
             wlan_client.connect_to(
                 wlan, C.SSID, C.PSSW, indicator_gpio=led)
             retry_count += 1
-        display.clear_lines([8])
+        d.clear_lines([8])
         # Check if connection succeded after retries
         return wlan.isconnected()
 
@@ -115,11 +129,11 @@ def data_pusher_thread(latest_request):
         try:
             if not try_connect(C.MAX_RECONNECTS, builtin_led):
                 builtin_led.off()
-                display.text_line("Not connected...", 8)
+                d.text_line("Not connected...", 8)
                 log("Failed to reconnect...")
             elif elapsed_time >= C.SEND_REQUEST_SECS:
                 log("Sending data...")
-                display.text_line("Sending data...", 8)
+                d.text_line("Sending data...", 8)
                 current_time = remote_time.get_current_time(
                     C.TIMEZONE).get('datetime')
                 documentData = create_document({
@@ -129,14 +143,14 @@ def data_pusher_thread(latest_request):
                 })
                 post_sensors_data(documentData).close()
                 log(documentData)
-                display.clear_lines([8])
+                d.clear_lines([8])
                 latest_request = now
             time.sleep(1)
         except Exception as exc:
             err = str(exc)
             elapsed_time = 0
             log(err)
-            display.text_line(err, 8)
+            d.text_line(err, 8)
             time.sleep(3)
 
 
@@ -149,25 +163,25 @@ def sensor_monitor_thread():
 
     def show_calibration_menu(sensors: list):
         log("Calibration menu")
-        display.text_line('Calibration', 1)
+        d.text_line('Calibration', 1)
         for s in sensors:
-            display.text_line('> Light', 3)
-            display.text_line('  Soil', 4)
+            d.text_line('> Light', 3)
+            d.text_line('  Soil', 4)
 
-    def show_min_sensor_calibration(sensor: sensors.Sensor):
+    def show_min_sensor_calibration(sensor: sensors.AnalogSensor):
         log(f'Voltaje: {sensor.read_voltage()/sensors.MICRO_VOLT}')
         log(f"{sensor.name} - Minimun")
-        display.text_line(f"{sensor.name} - Minimun", 1)
-        display.clear_lines([2])
-        display.text_line(
+        d.text_line(f"{sensor.name} - Minimun", 1)
+        d.clear_lines([2])
+        d.text_line(
             f'Voltaje: {sensor.read_voltage()/sensors.MICRO_VOLT}', 3)
 
-    def show_max_sensor_calibration(sensor: sensors.Sensor):
+    def show_max_sensor_calibration(sensor: sensors.AnalogSensor):
         log(f"{sensor.name} - Maximum")
         log(f'Voltaje: {sensor.read_voltage()/sensors.MICRO_VOLT}')
-        display.text_line(f"{sensor.name} - Maximum", 1)
-        display.clear_lines([2])
-        display.text_line(
+        d.text_line(f"{sensor.name} - Maximum", 1)
+        d.clear_lines([2])
+        d.text_line(
             f'Voltaje: {sensor.read_voltage()/sensors.MICRO_VOLT}', 3)
 
     def progress_bar(x, line, max_width, percent):
@@ -175,22 +189,22 @@ def sensor_monitor_thread():
         w = limit(percent, 100) * max_width // 100
         h = 6
         print({'p': percent, 'w': w})
-        display.rect(x, y, max_width, h, 0, True)
-        display.rect(x, y, max_width, h, 1)
-        display.rect(x, y, int(w), h, 1, True)
+        d.rect(x, y, max_width, h, 0, True)
+        d.rect(x, y, max_width, h, 1)
+        d.rect(x, y, int(w), h, 1, True)
 
     def display_sensors(sensors: dict):
         out = []
         for i, sen in enumerate(sensors.values()):
             out.append(f"{str(sen.get('name'))[0]}: {sen['values']}")
-            display.text(f"{str(sen.get('name'))[0]}", 0, (i+2)*8)
+            d.text(f"{str(sen.get('name'))[0]}", 0, (i+2)*8)
             progress_bar(16, i+3, 100, sen['values']['percent'])
         log(", ".join(out))
 
     while True:
         if is_pressed(boot_btn):
             # REDIRECT TO CALIBRATION MENU
-            display.fill(0)
+            d.fill(0)
             if current_workflow is C.MONITOR_WORKFLOW and button_released:
                 current_workflow = C.CALIBRATION_MENU_WORKFLOW
             # REDIRECT TO SENSOR MIN VALUE CALIBRATION
@@ -204,7 +218,7 @@ def sensor_monitor_thread():
             elif current_workflow is C.SET_SENSOR_MAX_CALIBRATION_VALUE and button_released:
                 soil.max_value = soil.read_voltage()
                 current_workflow = C.MONITOR_WORKFLOW
-                display.clear_lines([3, 4])
+                d.clear_lines([3, 4])
 
             button_released = False
 
@@ -212,7 +226,7 @@ def sensor_monitor_thread():
             button_released = True
 
         if current_workflow is C.MONITOR_WORKFLOW:
-            display.text_line("Plantagotchi", 1)
+            d.text_line("Plantagotchi", 1)
             display_sensors({
                 'ldr': ldr.as_dict(),
                 'soil': soil.as_dict()
@@ -228,31 +242,5 @@ def sensor_monitor_thread():
             show_max_sensor_calibration(soil)
             time.sleep_ms(250)
 
-
 # _thread.start_new_thread(data_pusher_thread, (initial_time,))
 # _thread.start_new_thread(sensor_monitor_thread, ())
-
-def setup_access_point():
-    import random
-    ssid = f'Pltchi-{random.randint(0, 100)}'
-
-    display.text_line('SSID:', 3)
-    display.text_line(ssid, 4)
-
-    access_point = WLAN(network.AP_IF)
-    access_point.config(ssid=ssid)
-    access_point.config(max_clients=1)
-    access_point.active(True)
-
-    return access_point
-
-
-station = setup_access_point()
-
-
-def web_page():
-    html = """"""
-    return html
-
-# data_pusher_thread(initial_time)
-# sensor_monitor_thread()
