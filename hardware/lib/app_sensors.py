@@ -53,7 +53,7 @@ class LdrSensor(AnalogSensor):
 
     def read_computed(self):
         return 1 - (self.read_adc() / 4095)
-
+asds
     def read_adc(self):
         return self.__hw_sensor.read()
 
